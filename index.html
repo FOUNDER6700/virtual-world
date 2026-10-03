@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Virtual World Prototype</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <h1>VIRTUAL WORLD</h1>
+        <div class="spinner"></div>
+        <p id="loading-text">Loading environment...</p>
+    </div>
+
+    <!-- 3D Canvas Container -->
+    <div id="game-container"></div>
+
+    <!-- UI Layer -->
+    <div id="ui-layer" style="display: none;">
+        <!-- Top HUD -->
+        <div id="hud-top">
+            <div id="logo">WORLD ALPHA</div>
+            <button id="btn-settings">⚙️ Menu</button>
+        </div>
+        
+        <!-- Interaction Prompt -->
+        <div id="interaction-prompt">Tap to interact</div>
+
+        <!-- Touch Controls -->
+        <!-- Left half of screen for movement -->
+        <div id="touch-zone-left"></div>
+        <!-- Right half of screen for camera look -->
+        <div id="touch-zone-right"></div>
+        
+        <!-- Virtual Joystick UI (Dynamic) -->
+        <div id="joystick-base"><div id="joystick-knob"></div></div>
+
+        <!-- Action Buttons -->
+        <div id="action-buttons">
+            <button id="btn-run">RUN</button>
+            <button id="btn-jump">JUMP</button>
+        </div>
+    </div>
+
+    <!-- Settings Menu -->
+    <div id="settings-menu" style="display: none;">
+        <h2>Settings</h2>
+        <div class="setting-row">
+            <label>Graphics Quality:</label>
+            <select id="setting-graphics">
+                <option value="low">Low (Faster)</option>
+                <option value="high" selected>High (Shadows)</option>
+            </select>
+        </div>
+        <div class="setting-row">
+            <label>Camera Sensitivity:</label>
+            <input type="range" id="setting-sensitivity" min="0.1" max="2.0" step="0.1" value="1.0">
+        </div>
+        <div class="setting-row">
+            <label>Time of Day:</label>
+            <input type="range" id="setting-time" min="0" max="24" step="0.5" value="12">
+        </div>
+        <button id="btn-close-settings">Resume</button>
+        <button id="btn-reset-save" style="margin-top:20px; background:red;">Reset Save</button>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+  </html>
+              
