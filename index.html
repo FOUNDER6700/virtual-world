@@ -39,16 +39,19 @@
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 20px;
             border: 1px solid white; display: none; pointer-events: auto; font-size: 1.2rem;
+            text-align: center;
         }
         .setting-row { margin: 15px 0; width: 80%; max-width: 300px; display: flex; justify-content: space-between; }
         #settings-menu button { padding: 10px 20px; margin-top: 20px; font-size: 1.1rem; }
+        #error-log { color: #ff6b6b; font-family: monospace; font-size: 0.8rem; margin-top: 20px; text-align: center; padding: 0 20px; word-wrap: break-word; }
     </style>
 </head>
 <body>
     <div id="loading-screen">
         <h1>VIRTUAL WORLD</h1>
         <div class="spinner"></div>
-        <p id="loading-text">Loading engine scripts...</p>
+        <p id="loading-text">Downloading 3D Engine...</p>
+        <p id="error-log"></p>
     </div>
 
     <div id="game-container"></div>
@@ -86,26 +89,42 @@
             <input type="range" id="setting-time" min="0" max="24" step="0.5" value="12">
         </div>
         <button id="btn-close-settings">Resume</button>
-        <button id="btn-reset-save" style="margin-top:20px; background:red;">Reset Save</button>
+        <button id="btn-reset-save" style="margin-top:20px; background:red; color:white; border:none; padding:10px;">Reset Save</button>
     </div>
 
-    <script type="module">
-        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+    <!-- 1. Load Three.js as a classic global script (Bulletproof) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- 2. Main Game Script -->
+    <script>
+        // Catch absolute ANY errors and print them to the screen
+        window.onerror = function(msg, url, line, col, error) {
+            document.getElementById('spinner').style.display = 'none';
+            document.getElementById('loading-text').innerText = "FATAL ERROR";
+            document.getElementById('loading-text').style.color = "red";
+            document.getElementById('error-log').innerText = msg + " (Line: " + line + ")";
+            return false;
+        };
+
+        // Ensure THREE loaded
+        if (typeof THREE === 'undefined') {
+            throw new Error("Three.js failed to download from CDN. Check internet connection.");
+        }
 
         // ==========================================
-        // 1. STORAGE SYSTEM
+        // STORAGE
         // ==========================================
         const Storage = {
-            save(key, data) { try { localStorage.setItem('vw_' + key, JSON.stringify(data)); } catch (e) {} },
-            load(key, defaultData) {
+            save: function(key, data) { try { localStorage.setItem('vw_' + key, JSON.stringify(data)); } catch (e) {} },
+            load: function(key, defaultData) {
                 try { const data = localStorage.getItem('vw_' + key); return data ? JSON.parse(data) : defaultData; } 
                 catch (e) { return defaultData; }
             },
-            clear() { Object.keys(localStorage).forEach(key => { if(key.startsWith('vw_')) localStorage.removeItem(key); }); }
+            clear: function() { Object.keys(localStorage).forEach(function(key) { if(key.startsWith('vw_')) localStorage.removeItem(key); }); }
         };
 
         // ==========================================
-        // 2. INPUT & CONTROLS
+        // INPUT
         // ==========================================
         const Input = {
             movement: { x: 0, y: 0 }, cameraDelta: { x: 0, y: 0 },
@@ -121,7 +140,7 @@
             const zoneLeft = document.getElementById('touch-zone-left');
             const zoneRight = document.getElementById('touch-zone-right');
 
-            zoneLeft.addEventListener('pointerdown', (e) => {
+            zoneLeft.addEventListener('pointerdown', function(e) {
                 if(activeLeftTouch !== null) return;
                 activeLeftTouch = e.pointerId;
                 joystickCenter = { x: e.clientX, y: e.clientY };
@@ -131,28 +150,28 @@
                 updateJoystick(e.clientX, e.clientY);
             });
 
-            zoneLeft.addEventListener('pointermove', (e) => {
+            zoneLeft.addEventListener('pointermove', function(e) {
                 if(e.pointerId === activeLeftTouch) updateJoystick(e.clientX, e.clientY);
             });
 
-            const resetLeft = (e) => {
+            const resetLeft = function(e) {
                 if(e.pointerId === activeLeftTouch) {
                     activeLeftTouch = null;
                     joyBase.style.display = 'none';
                     Input.movement = { x: 0, y: 0 };
-                    joyKnob.style.transform = `translate(0px, 0px)`;
+                    joyKnob.style.transform = 'translate(0px, 0px)';
                 }
             };
             zoneLeft.addEventListener('pointerup', resetLeft);
             zoneLeft.addEventListener('pointercancel', resetLeft);
 
-            zoneRight.addEventListener('pointerdown', (e) => {
+            zoneRight.addEventListener('pointerdown', function(e) {
                 if(activeRightTouch !== null) return;
                 activeRightTouch = e.pointerId;
                 lastRightPos = { x: e.clientX, y: e.clientY };
             });
 
-            zoneRight.addEventListener('pointermove', (e) => {
+            zoneRight.addEventListener('pointermove', function(e) {
                 if(e.pointerId === activeRightTouch) {
                     Input.cameraDelta.x = (e.clientX - lastRightPos.x) * 0.005 * Input.sensitivity;
                     Input.cameraDelta.y = (e.clientY - lastRightPos.y) * 0.005 * Input.sensitivity;
@@ -160,7 +179,7 @@
                 }
             });
 
-            const resetRight = (e) => {
+            const resetRight = function(e) {
                 if(e.pointerId === activeRightTouch) {
                     activeRightTouch = null;
                     Input.cameraDelta = { x: 0, y: 0 };
@@ -169,18 +188,17 @@
             zoneRight.addEventListener('pointerup', resetRight);
             zoneRight.addEventListener('pointercancel', resetRight);
 
-            document.getElementById('btn-jump').addEventListener('pointerdown', () => Input.isJumping = true);
-            document.getElementById('btn-jump').addEventListener('pointerup', () => Input.isJumping = false);
-            
-            document.getElementById('btn-run').addEventListener('pointerdown', () => Input.isRunning = true);
-            document.getElementById('btn-run').addEventListener('pointerup', () => Input.isRunning = false);
+            document.getElementById('btn-jump').addEventListener('pointerdown', function() { Input.isJumping = true; });
+            document.getElementById('btn-jump').addEventListener('pointerup', function() { Input.isJumping = false; });
+            document.getElementById('btn-run').addEventListener('pointerdown', function() { Input.isRunning = true; });
+            document.getElementById('btn-run').addEventListener('pointerup', function() { Input.isRunning = false; });
 
             const btnInteract = document.getElementById('interaction-prompt');
-            btnInteract.addEventListener('pointerdown', () => {
+            btnInteract.addEventListener('pointerdown', function() {
                 Input.interactTriggered = true;
                 btnInteract.style.background = "white";
                 btnInteract.style.color = "black";
-                setTimeout(() => {
+                setTimeout(function() {
                     btnInteract.style.background = "rgba(0,0,0,0.7)";
                     btnInteract.style.color = "white";
                 }, 200);
@@ -193,13 +211,13 @@
             let dy = clientY - joystickCenter.y;
             const distance = Math.sqrt(dx*dx + dy*dy);
             if(distance > maxDist) { dx = (dx / distance) * maxDist; dy = (dy / distance) * maxDist; }
-            joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+            joyKnob.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';
             Input.movement.x = dx / maxDist;
             Input.movement.y = dy / maxDist; 
         }
 
         // ==========================================
-        // 3. GRAPHICS ENGINE
+        // ENGINE
         // ==========================================
         let scene, camera, renderer, sunLight, hemiLight;
 
@@ -233,7 +251,7 @@
             sunLight.shadow.camera.bottom = -d;
             scene.add(sunLight);
 
-            window.addEventListener('resize', () => {
+            window.addEventListener('resize', function() {
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -265,7 +283,7 @@
         }
 
         // ==========================================
-        // 4. WORLD GENERATION
+        // WORLD
         // ==========================================
         let colliders = [];
         let interactables = [];
@@ -278,13 +296,6 @@
             ground.receiveShadow = true;
             scene.add(ground);
 
-            const waterGeo = new THREE.PlaneGeometry(30, 30);
-            const waterMat = new THREE.MeshLambertMaterial({ color: 0x0077b6, transparent: true, opacity: 0.8 });
-            const water = new THREE.Mesh(waterGeo, waterMat);
-            water.rotation.x = -Math.PI / 2;
-            water.position.set(40, 0.1, -30);
-            scene.add(water);
-
             createHouse(scene, 0, 0, 10, 0x8b4513, 0xff0000);
             createHouse(scene, 15, 0, 15, 0xd2b48c, 0x0000ff);
             createHouse(scene, -15, 0, 10, 0x808080, 0x00ff00);
@@ -293,10 +304,8 @@
                 let x = (Math.random() - 0.5) * 150;
                 let z = (Math.random() - 0.5) * 150;
                 if(Math.abs(x) < 25 && Math.abs(z) < 25) continue;
-                if(x > 25 && z < -15) continue;
                 createTree(scene, x, z);
             }
-            createMysteriousArea(scene);
         }
 
         function createHouse(scene, x, y, z, wallColor, roofColor) {
@@ -359,36 +368,8 @@
             colliders.push(box);
         }
 
-        function createMysteriousArea(scene) {
-            const mystGrp = new THREE.Group();
-            mystGrp.position.set(-40, 0, -40);
-
-            for(let i=0; i<8; i++) {
-                const angle = (i / 8) * Math.PI * 2;
-                const geo = new THREE.BoxGeometry(2, 8, 2);
-                const mat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-                const pillar = new THREE.Mesh(geo, mat);
-                pillar.position.set(Math.cos(angle)*10, 4, Math.sin(angle)*10);
-                pillar.castShadow = true;
-                mystGrp.add(pillar);
-                
-                const box = new THREE.Box3();
-                box.setFromCenterAndSize(new THREE.Vector3(mystGrp.position.x + pillar.position.x, 4, mystGrp.position.z + pillar.position.z), new THREE.Vector3(2, 8, 2));
-                colliders.push(box);
-            }
-
-            const glowGeo = new THREE.BoxGeometry(3,3,3);
-            const glowMat = new THREE.MeshBasicMaterial({ color: 0x8a2be2, wireframe: true });
-            const glow = new THREE.Mesh(glowGeo, glowMat);
-            glow.position.y = 2;
-            glow.userData = { interactable: true, action: 'monolith', name: "Strange Artifact" };
-            interactables.push(glow);
-            mystGrp.add(glow);
-            scene.add(mystGrp);
-        }
-
         // ==========================================
-        // 5. PLAYER PHYSICS
+        // PLAYER 
         // ==========================================
         let playerGroup;
         let velocity = new THREE.Vector3();
@@ -430,4 +411,164 @@
             Input.cameraDelta = { x: 0, y: 0 };
 
             const speed = Input.isRunning ? speedRun : speedWalk;
-            const moveDir = new THREE.Vector3(Input.movement.x,
+            const moveDir = new THREE.Vector3(Input.movement.x, 0, Input.movement.y);
+            
+            if (moveDir.length() > 0.1) {
+                moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraYaw);
+                playerGroup.rotation.y = Math.atan2(moveDir.x, moveDir.z);
+                velocity.x = moveDir.x * speed;
+                velocity.z = moveDir.z * speed;
+            } else {
+                velocity.x *= 0.8; 
+                velocity.z *= 0.8;
+            }
+
+            if (Input.isJumping && isGrounded) {
+                velocity.y = jumpForce;
+                isGrounded = false;
+                Input.isJumping = false;
+            }
+            velocity.y += gravity * dt;
+
+            const nextPos = playerGroup.position.clone();
+            nextPos.x += velocity.x * dt;
+            nextPos.z += velocity.z * dt;
+            nextPos.y += velocity.y * dt;
+
+            const playerAABB = new THREE.Box3();
+            playerAABB.setFromCenterAndSize(
+                new THREE.Vector3(nextPos.x, nextPos.y + playerHeight/2, nextPos.z),
+                new THREE.Vector3(playerRadius*2, playerHeight, playerRadius*2)
+            );
+
+            let hitWall = false;
+            for(let i=0; i<colliders.length; i++) {
+                if(playerAABB.intersectsBox(colliders[i])) { hitWall = true; break; }
+            }
+
+            if(!hitWall) {
+                playerGroup.position.x = nextPos.x;
+                playerGroup.position.z = nextPos.z;
+            } else {
+                velocity.x = 0; velocity.z = 0;
+            }
+
+            if (playerGroup.position.y < 0) {
+                playerGroup.position.y = 0;
+                velocity.y = 0;
+                isGrounded = true;
+            } else {
+                playerGroup.position.y = nextPos.y;
+            }
+
+            const camOffset = new THREE.Vector3(
+                Math.sin(cameraYaw) * Math.cos(cameraPitch) * 6,
+                Math.sin(cameraPitch) * 6 + 2,
+                Math.cos(cameraYaw) * Math.cos(cameraPitch) * 6
+            );
+            camera.position.copy(playerGroup.position).add(camOffset);
+            camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1.5, playerGroup.position.z);
+        }
+
+        // ==========================================
+        // MAIN LOOP
+        // ==========================================
+        let lastTime = performance.now();
+        let saveTimer = 0;
+        let currentInteractable = null;
+
+        const uiLayer = document.getElementById('ui-layer');
+        const loadingScreen = document.getElementById('loading-screen');
+        const interactPrompt = document.getElementById('interaction-prompt');
+
+        function startGame() {
+            document.getElementById('loading-text').innerText = "Generating World...";
+            
+            initEngine(document.getElementById('game-container'));
+            initWorld(scene);
+            initPlayer(scene, camera);
+            initControls();
+            
+            // UI Setup
+            document.getElementById('btn-settings').addEventListener('click', function() {
+                document.getElementById('settings-menu').style.display = 'flex';
+                uiLayer.style.display = 'none';
+            });
+            document.getElementById('btn-close-settings').addEventListener('click', function() {
+                document.getElementById('settings-menu').style.display = 'none';
+                uiLayer.style.display = 'block';
+            });
+            document.getElementById('btn-reset-save').addEventListener('click', function() {
+                Storage.clear();
+                location.reload();
+            });
+            
+            const time = Storage.load('timeOfDay', 12);
+            document.getElementById('setting-time').value = time;
+            updateDayNight(time);
+            
+            Input.sensitivity = parseFloat(Storage.load('sensitivity', 1.0));
+            document.getElementById('setting-sensitivity').value = Input.sensitivity;
+
+            loadingScreen.style.display = 'none';
+            uiLayer.style.display = 'block';
+            
+            renderer.setAnimationLoop(animate);
+        }
+
+        function checkInteractions() {
+            if(!playerGroup) return;
+            let found = null;
+            const pPos = playerGroup.position;
+            
+            for(let i=0; i<interactables.length; i++) {
+                let obj = interactables[i];
+                let worldPos = new THREE.Vector3();
+                obj.getWorldPosition(worldPos);
+                if(pPos.distanceTo(worldPos) < 4) { found = obj; break; }
+            }
+
+            if(found !== currentInteractable) {
+                currentInteractable = found;
+                if(currentInteractable) {
+                    interactPrompt.style.display = 'block';
+                    interactPrompt.innerText = "Tap: " + currentInteractable.userData.name;
+                } else {
+                    interactPrompt.style.display = 'none';
+                }
+            }
+
+            if(Input.interactTriggered && currentInteractable) {
+                Input.interactTriggered = false; 
+                if(currentInteractable.userData.action === 'door') {
+                    currentInteractable.userData.open = !currentInteractable.userData.open;
+                    currentInteractable.rotation.y = currentInteractable.userData.open ? Math.PI / 2 : 0;
+                    currentInteractable.position.x = currentInteractable.userData.open ? -0.7 : 0;
+                }
+            } else {
+                Input.interactTriggered = false; 
+            }
+        }
+
+        function animate() {
+            const time = performance.now();
+            const dt = Math.min((time - lastTime) / 1000, 0.1); 
+            lastTime = time;
+
+            updatePlayer(dt, camera, colliders);
+            checkInteractions();
+
+            renderer.render(scene, camera);
+
+            saveTimer += dt;
+            if(saveTimer > 2.0 && playerGroup) {
+                Storage.save('playerPos', { x: playerGroup.position.x, y: playerGroup.position.y, z: playerGroup.position.z });
+                saveTimer = 0;
+            }
+        }
+
+        // Start exactly 1 second after script loads to ensure Three.js is ready
+        setTimeout(startGame, 1000);
+    </script>
+</body>
+</html>
