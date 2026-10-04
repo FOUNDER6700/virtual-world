@@ -3,572 +3,403 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Virtual World Prototype</title>
+    <title>Native WebGL Virtual World</title>
     <style>
-        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; touch-action: none; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: sans-serif; }
-        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        * { box-sizing: border-box; user-select: none; touch-action: none; font-family: sans-serif; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
-        #loading-screen, #settings-menu {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #111; color: white; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; z-index: 100; pointer-events: auto;
-        }
-        .spinner { width: 40px; height: 40px; border: 4px solid #333; border-top: 4px solid #fff; border-radius: 50%; animation: spin 1s linear infinite; margin: 20px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        #hud-top { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; pointer-events: auto; }
-        #logo { font-weight: bold; font-size: 1.2rem; color: white; text-shadow: 1px 1px 2px black; }
-        #btn-settings { background: rgba(0,0,0,0.5); color: white; border: 1px solid white; padding: 5px 15px; border-radius: 5px; }
-        #touch-zone-left { position: absolute; bottom: 0; left: 0; width: 50%; height: 100%; pointer-events: auto; }
-        #touch-zone-right { position: absolute; bottom: 0; right: 0; width: 50%; height: 100%; pointer-events: auto; }
-        #joystick-base {
-            position: absolute; width: 100px; height: 100px; background: rgba(255,255,255,0.2);
-            border-radius: 50%; display: none; transform: translate(-50%, -50%); pointer-events: none;
-        }
-        #joystick-knob {
-            position: absolute; top: 25px; left: 25px; width: 50px; height: 50px;
-            background: rgba(255,255,255,0.6); border-radius: 50%;
-        }
+        #hud-top { position: absolute; top: 15px; left: 15px; right: 15px; display: flex; justify-content: space-between; pointer-events: auto; }
+        #logo { font-weight: bold; font-size: 1.2rem; color: white; text-shadow: 1px 1px 3px black; }
+        
+        #joystick-zone { position: absolute; bottom: 0; left: 0; width: 50%; height: 100%; pointer-events: auto; }
+        #camera-zone { position: absolute; bottom: 0; right: 0; width: 50%; height: 100%; pointer-events: auto; }
+        
+        #joystick-base { position: absolute; width: 100px; height: 100px; background: rgba(255,255,255,0.2); border-radius: 50%; display: none; transform: translate(-50%, -50%); pointer-events: none; border: 2px solid rgba(255,255,255,0.4); }
+        #joystick-knob { position: absolute; top: 25px; left: 25px; width: 50px; height: 50px; background: rgba(255,255,255,0.7); border-radius: 50%; }
+        
         #action-buttons { position: absolute; bottom: 30px; right: 30px; display: flex; gap: 15px; pointer-events: auto; }
-        #action-buttons button {
-            width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,0.3);
-            color: white; border: 2px solid rgba(255,255,255,0.6); font-weight: bold; font-size: 0.8rem;
-        }
-        #action-buttons button:active { background: rgba(255,255,255,0.6); }
-        #interaction-prompt {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 20px;
-            border: 1px solid white; display: none; pointer-events: auto; font-size: 1.2rem;
-            text-align: center;
-        }
-        .setting-row { margin: 15px 0; width: 80%; max-width: 300px; display: flex; justify-content: space-between; }
-        #settings-menu button { padding: 10px 20px; margin-top: 20px; font-size: 1.1rem; }
-        #error-log { color: #ff6b6b; font-family: monospace; font-size: 0.8rem; margin-top: 20px; text-align: center; padding: 0 20px; word-wrap: break-word; }
+        .action-btn { width: 65px; height: 65px; border-radius: 50%; background: rgba(0,0,0,0.5); color: white; border: 2px solid rgba(255,255,255,0.8); font-weight: bold; font-size: 0.8rem; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        .action-btn:active { background: rgba(255,255,255,0.8); color: black; }
+        
+        #error-log { position: absolute; top: 50%; left: 10%; right: 10%; background: rgba(255,0,0,0.8); color: white; padding: 20px; text-align: center; display: none; z-index: 100; border-radius: 10px; font-family: monospace; }
+        
+        #loading { position: absolute; top:0; left:0; width: 100%; height: 100%; background: #111; z-index: 50; display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem; transition: opacity 0.5s; }
     </style>
 </head>
 <body>
-    <div id="loading-screen">
-        <h1>VIRTUAL WORLD</h1>
-        <div class="spinner"></div>
-        <p id="loading-text">Downloading 3D Engine...</p>
-        <p id="error-log"></p>
-    </div>
 
-    <div id="game-container"></div>
+    <div id="loading">ENTERING WORLD...</div>
+    <div id="error-log"></div>
+    <canvas id="glcanvas"></canvas>
 
-    <div id="ui-layer" style="display: none;">
+    <div id="ui-layer">
         <div id="hud-top">
-            <div id="logo">WORLD ALPHA</div>
-            <button id="btn-settings">⚙️ Menu</button>
+            <div id="logo">NATIVE WORLD</div>
         </div>
-        <div id="interaction-prompt">Tap to interact</div>
-        <div id="touch-zone-left"></div>
-        <div id="touch-zone-right"></div>
+        
+        <div id="joystick-zone"></div>
+        <div id="camera-zone"></div>
+        
         <div id="joystick-base"><div id="joystick-knob"></div></div>
+        
         <div id="action-buttons">
-            <button id="btn-run">RUN</button>
-            <button id="btn-jump">JUMP</button>
+            <button class="action-btn" id="btn-jump">JUMP</button>
         </div>
     </div>
 
-    <div id="settings-menu" style="display: none;">
-        <h2>Settings</h2>
-        <div class="setting-row">
-            <label>Graphics Quality:</label>
-            <select id="setting-graphics">
-                <option value="low">Low (Faster)</option>
-                <option value="high" selected>High (Shadows)</option>
-            </select>
-        </div>
-        <div class="setting-row">
-            <label>Camera Sensitivity:</label>
-            <input type="range" id="setting-sensitivity" min="0.1" max="2.0" step="0.1" value="1.0">
-        </div>
-        <div class="setting-row">
-            <label>Time of Day:</label>
-            <input type="range" id="setting-time" min="0" max="24" step="0.5" value="12">
-        </div>
-        <button id="btn-close-settings">Resume</button>
-        <button id="btn-reset-save" style="margin-top:20px; background:red; color:white; border:none; padding:10px;">Reset Save</button>
-    </div>
-
-    <!-- 1. Load Three.js as a classic global script (Bulletproof) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-
-    <!-- 2. Main Game Script -->
     <script>
-        // Catch absolute ANY errors and print them to the screen
-        window.onerror = function(msg, url, line, col, error) {
-            document.getElementById('spinner').style.display = 'none';
-            document.getElementById('loading-text').innerText = "FATAL ERROR";
-            document.getElementById('loading-text').style.color = "red";
-            document.getElementById('error-log').innerText = msg + " (Line: " + line + ")";
+        window.onerror = function(msg, url, line) {
+            const err = document.getElementById('error-log');
+            err.style.display = 'block';
+            err.innerText = `CRASH: ${msg} (Line ${line})`;
             return false;
         };
 
-        // Ensure THREE loaded
-        if (typeof THREE === 'undefined') {
-            throw new Error("Three.js failed to download from CDN. Check internet connection.");
+        // --- 1. CORE WEBGL MATH ---
+        // We write our own matrix math to completely avoid external libraries
+        const Math3D = {
+            createMatrix: () => new Float32Array(16),
+            identity: (m) => {
+                for(let i=0; i<16; i++) m[i] = (i%5 === 0) ? 1 : 0;
+                return m;
+            },
+            perspective: (m, fov, aspect, near, far) => {
+                const f = 1.0 / Math.tan(fov / 2);
+                const nf = 1 / (near - far);
+                m[0] = f / aspect; m[1] = 0; m[2] = 0; m[3] = 0;
+                m[4] = 0; m[5] = f; m[6] = 0; m[7] = 0;
+                m[8] = 0; m[9] = 0; m[10] = (far + near) * nf; m[11] = -1;
+                m[12] = 0; m[13] = 0; m[14] = (2 * far * near) * nf; m[15] = 0;
+            },
+            multiply: (out, a, b) => {
+                for(let i=0; i<4; i++) {
+                    for(let j=0; j<4; j++) {
+                        out[i*4+j] = a[i*4+0]*b[0*4+j] + a[i*4+1]*b[1*4+j] + a[i*4+2]*b[2*4+j] + a[i*4+3]*b[3*4+j];
+                    }
+                }
+            },
+            translate: (m, x, y, z) => {
+                m[12] += m[0]*x + m[4]*y + m[8]*z;
+                m[13] += m[1]*x + m[5]*y + m[9]*z;
+                m[14] += m[2]*x + m[6]*y + m[10]*z;
+                m[15] += m[3]*x + m[7]*y + m[11]*z;
+            },
+            rotateY: (m, angle) => {
+                const s = Math.sin(angle), c = Math.cos(angle);
+                const m00 = m[0], m01 = m[1], m02 = m[2], m03 = m[3];
+                const m80 = m[8], m81 = m[9], m82 = m[10], m83 = m[11];
+                m[0] = m00*c + m80*-s; m[1] = m01*c + m81*-s; m[2] = m02*c + m82*-s; m[3] = m03*c + m83*-s;
+                m[8] = m00*s + m80*c; m[9] = m01*s + m81*c; m[10] = m02*s + m82*c; m[11] = m03*s + m83*c;
+            },
+            rotateX: (m, angle) => {
+                const s = Math.sin(angle), c = Math.cos(angle);
+                const m40 = m[4], m41 = m[5], m42 = m[6], m43 = m[7];
+                const m80 = m[8], m81 = m[9], m82 = m[10], m83 = m[11];
+                m[4] = m40*c + m80*s; m[5] = m41*c + m81*s; m[6] = m42*c + m82*s; m[7] = m43*c + m83*s;
+                m[8] = m40*-s + m80*c; m[9] = m41*-s + m81*c; m[10] = m42*-s + m82*c; m[11] = m43*-s + m83*c;
+            }
+        };
+
+        // --- 2. SHADERS ---
+        // Simple gouraud shading for that classic low-poly 3D feel
+        const vsSource = `
+            attribute vec4 aVertexPosition;
+            attribute vec3 aVertexNormal;
+            attribute vec4 aVertexColor;
+            
+            uniform mat4 uModelViewMatrix;
+            uniform mat4 uProjectionMatrix;
+            
+            varying lowp vec4 vColor;
+            varying highp vec3 vLighting;
+            
+            void main(void) {
+                gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+                
+                highp vec3 ambientLight = vec3(0.3, 0.3, 0.4);
+                highp vec3 directionalLightColor = vec3(1, 1, 0.9);
+                highp vec3 directionalVector = normalize(vec3(0.85, 0.8, 0.75));
+                
+                highp mat4 normalMatrix = uModelViewMatrix; 
+                highp vec4 transformedNormal = normalMatrix * vec4(aVertexNormal, 0.0);
+                
+                highp float directional = max(dot(transformedNormal.xyz, directionalVector), 0.0);
+                vLighting = ambientLight + (directionalLightColor * directional);
+                vColor = aVertexColor;
+            }
+        `;
+
+        const fsSource = `
+            varying lowp vec4 vColor;
+            varying highp vec3 vLighting;
+            void main(void) {
+                gl_FragColor = vec4(vColor.rgb * vLighting, vColor.a);
+                
+                // Extremely simple distance fog
+                highp float depth = gl_FragCoord.z / gl_FragCoord.w;
+                highp float fogFactor = smoothstep(20.0, 60.0, depth);
+                gl_FragColor = mix(gl_FragColor, vec4(0.5, 0.7, 1.0, 1.0), fogFactor);
+            }
+        `;
+
+        // --- 3. GEOMETRY GENERATION ---
+        let worldVertices = [], worldNormals = [], worldColors = [], worldIndices = [];
+        let indexOffset = 0;
+
+        function addBox(x, y, z, w, h, d, r, g, b) {
+            const hw=w/2, hh=h/2, hd=d/2;
+            const pts = [
+                [-hw,-hh,hd], [hw,-hh,hd], [hw,hh,hd], [-hw,hh,hd], // Front
+                [-hw,-hh,-hd], [-hw,hh,-hd], [hw,hh,-hd], [hw,-hh,-hd], // Back
+                [-hw,hh,-hd], [-hw,hh,hd], [hw,hh,hd], [hw,hh,-hd], // Top
+                [-hw,-hh,-hd], [hw,-hh,-hd], [hw,-hh,hd], [-hw,-hh,hd], // Bottom
+                [hw,-hh,-hd], [hw,hh,-hd], [hw,hh,hd], [hw,-hh,hd], // Right
+                [-hw,-hh,-hd], [-hw,-hh,hd], [-hw,hh,hd], [-hw,hh,-hd]  // Left
+            ];
+            const norms = [
+                [0,0,1], [0,0,-1], [0,1,0], [0,-1,0], [1,0,0], [-1,0,0]
+            ];
+
+            for(let face=0; face<6; face++) {
+                for(let i=0; i<4; i++) {
+                    const p = pts[face*4 + i];
+                    worldVertices.push(p[0]+x, p[1]+y, p[2]+z);
+                    worldNormals.push(...norms[face]);
+                    worldColors.push(r, g, b, 1.0);
+                }
+                const o = indexOffset;
+                worldIndices.push(o, o+1, o+2, o, o+2, o+3);
+                indexOffset += 4;
+            }
         }
 
-        // ==========================================
-        // STORAGE
-        // ==========================================
-        const Storage = {
-            save: function(key, data) { try { localStorage.setItem('vw_' + key, JSON.stringify(data)); } catch (e) {} },
-            load: function(key, defaultData) {
-                try { const data = localStorage.getItem('vw_' + key); return data ? JSON.parse(data) : defaultData; } 
-                catch (e) { return defaultData; }
-            },
-            clear: function() { Object.keys(localStorage).forEach(function(key) { if(key.startsWith('vw_')) localStorage.removeItem(key); }); }
-        };
+        // --- 4. WORLD BUILDING ---
+        function generateWorld() {
+            // Ground
+            addBox(0, -0.5, 0, 100, 1, 100, 0.3, 0.6, 0.2);
+            
+            // Village
+            addBox(0, 2, -10, 6, 4, 6, 0.8, 0.7, 0.6); // House 1
+            addBox(12, 2, -8, 5, 4, 5, 0.7, 0.6, 0.5); // House 2
+            addBox(-10, 3, -15, 8, 6, 8, 0.5, 0.5, 0.5); // Big House
 
-        // ==========================================
-        // INPUT
-        // ==========================================
-        const Input = {
-            movement: { x: 0, y: 0 }, cameraDelta: { x: 0, y: 0 },
-            isJumping: false, isRunning: false, interactTriggered: false, sensitivity: 1.0
-        };
+            // Trees (Trunk + Leaves)
+            for(let i=0; i<30; i++) {
+                let tx = (Math.random() - 0.5) * 80;
+                let tz = (Math.random() - 0.5) * 80;
+                if(Math.abs(tx) < 15 && Math.abs(tz) < 20) continue; // Keep village clear
+                
+                addBox(tx, 1, tz, 0.8, 2, 0.8, 0.4, 0.2, 0.1); // Trunk
+                addBox(tx, 3.5, tz, 3, 3, 3, 0.1, 0.5, 0.2); // Leaves
+            }
+        }
 
-        let joyBase, joyKnob, joystickCenter = { x: 0, y: 0 };
-        let activeLeftTouch = null, activeRightTouch = null, lastRightPos = { x: 0, y: 0 };
+        // --- 5. INITIALIZE ENGINE ---
+        let gl, programInfo, buffers;
+        
+        function initWebGL() {
+            const canvas = document.getElementById('glcanvas');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            
+            if(!gl) throw new Error("WebGL not supported on this device.");
+
+            generateWorld();
+
+            const initShader = (type, source) => {
+                const shader = gl.createShader(type);
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+                return shader;
+            };
+
+            const shaderProgram = gl.createProgram();
+            gl.attachShader(shaderProgram, initShader(gl.VERTEX_SHADER, vsSource));
+            gl.attachShader(shaderProgram, initShader(gl.FRAGMENT_SHADER, fsSource));
+            gl.linkProgram(shaderProgram);
+
+            programInfo = {
+                program: shaderProgram,
+                attribLocations: {
+                    vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
+                    vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal'),
+                    vertexColor: gl.getAttribLocation(shaderProgram, 'aVertexColor'),
+                },
+                uniformLocations: {
+                    projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
+                    modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
+                }
+            };
+
+            const createBuffer = (data, type) => {
+                const b = gl.createBuffer();
+                gl.bindBuffer(type, b);
+                gl.bufferData(type, data, gl.STATIC_DRAW);
+                return b;
+            };
+
+            buffers = {
+                position: createBuffer(new Float32Array(worldVertices), gl.ARRAY_BUFFER),
+                normal: createBuffer(new Float32Array(worldNormals), gl.ARRAY_BUFFER),
+                color: createBuffer(new Float32Array(worldColors), gl.ARRAY_BUFFER),
+                indices: createBuffer(new Uint16Array(worldIndices), gl.ELEMENT_ARRAY_BUFFER)
+            };
+            
+            // Clear loading screen
+            document.getElementById('loading').style.opacity = '0';
+            setTimeout(() => document.getElementById('loading').style.display = 'none', 500);
+        }
+
+        // --- 6. PLAYER CONTROLS ---
+        let player = { x: 0, y: 1.5, z: 0, yaw: 0, pitch: 0, vy: 0 };
+        const input = { moveX: 0, moveY: 0, lookX: 0, lookY: 0, jump: false };
+        let lastTime = 0;
 
         function initControls() {
-            joyBase = document.getElementById('joystick-base');
-            joyKnob = document.getElementById('joystick-knob');
-            const zoneLeft = document.getElementById('touch-zone-left');
-            const zoneRight = document.getElementById('touch-zone-right');
+            const joyBase = document.getElementById('joystick-base');
+            const joyKnob = document.getElementById('joystick-knob');
+            
+            let activeJoyTouch = null;
+            let joyCenter = {x:0, y:0};
 
-            zoneLeft.addEventListener('pointerdown', function(e) {
-                if(activeLeftTouch !== null) return;
-                activeLeftTouch = e.pointerId;
-                joystickCenter = { x: e.clientX, y: e.clientY };
+            document.getElementById('joystick-zone').addEventListener('pointerdown', e => {
+                if(activeJoyTouch !== null) return;
+                activeJoyTouch = e.pointerId;
+                joyCenter = { x: e.clientX, y: e.clientY };
                 joyBase.style.display = 'block';
-                joyBase.style.left = joystickCenter.x + 'px';
-                joyBase.style.top = joystickCenter.y + 'px';
-                updateJoystick(e.clientX, e.clientY);
+                joyBase.style.left = e.clientX + 'px';
+                joyBase.style.top = e.clientY + 'px';
             });
 
-            zoneLeft.addEventListener('pointermove', function(e) {
-                if(e.pointerId === activeLeftTouch) updateJoystick(e.clientX, e.clientY);
+            document.getElementById('joystick-zone').addEventListener('pointermove', e => {
+                if(e.pointerId !== activeJoyTouch) return;
+                const max = 40;
+                let dx = e.clientX - joyCenter.x;
+                let dy = e.clientY - joyCenter.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if(dist > max) { dx = (dx/dist)*max; dy = (dy/dist)*max; }
+                
+                joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+                input.moveX = dx / max;
+                input.moveY = dy / max;
             });
 
-            const resetLeft = function(e) {
-                if(e.pointerId === activeLeftTouch) {
-                    activeLeftTouch = null;
+            const resetJoy = e => {
+                if(e.pointerId === activeJoyTouch) {
+                    activeJoyTouch = null;
                     joyBase.style.display = 'none';
-                    Input.movement = { x: 0, y: 0 };
-                    joyKnob.style.transform = 'translate(0px, 0px)';
+                    joyKnob.style.transform = `translate(0px, 0px)`;
+                    input.moveX = 0; input.moveY = 0;
                 }
             };
-            zoneLeft.addEventListener('pointerup', resetLeft);
-            zoneLeft.addEventListener('pointercancel', resetLeft);
+            ['pointerup','pointercancel','pointerout'].forEach(evt => document.getElementById('joystick-zone').addEventListener(evt, resetJoy));
 
-            zoneRight.addEventListener('pointerdown', function(e) {
-                if(activeRightTouch !== null) return;
-                activeRightTouch = e.pointerId;
-                lastRightPos = { x: e.clientX, y: e.clientY };
+            // Camera Swipe
+            let activeCamTouch = null, lastCam = {x:0,y:0};
+            document.getElementById('camera-zone').addEventListener('pointerdown', e => {
+                if(activeCamTouch !== null) return;
+                activeCamTouch = e.pointerId;
+                lastCam = {x: e.clientX, y: e.clientY};
             });
-
-            zoneRight.addEventListener('pointermove', function(e) {
-                if(e.pointerId === activeRightTouch) {
-                    Input.cameraDelta.x = (e.clientX - lastRightPos.x) * 0.005 * Input.sensitivity;
-                    Input.cameraDelta.y = (e.clientY - lastRightPos.y) * 0.005 * Input.sensitivity;
-                    lastRightPos = { x: e.clientX, y: e.clientY };
-                }
+            document.getElementById('camera-zone').addEventListener('pointermove', e => {
+                if(e.pointerId !== activeCamTouch) return;
+                player.yaw -= (e.clientX - lastCam.x) * 0.005;
+                player.pitch -= (e.clientY - lastCam.y) * 0.005;
+                player.pitch = Math.max(-1.5, Math.min(1.5, player.pitch));
+                lastCam = {x: e.clientX, y: e.clientY};
             });
+            const resetCam = e => { if(e.pointerId === activeCamTouch) activeCamTouch = null; };
+            ['pointerup','pointercancel','pointerout'].forEach(evt => document.getElementById('camera-zone').addEventListener(evt, resetCam));
 
-            const resetRight = function(e) {
-                if(e.pointerId === activeRightTouch) {
-                    activeRightTouch = null;
-                    Input.cameraDelta = { x: 0, y: 0 };
-                }
+            // Jump
+            document.getElementById('btn-jump').addEventListener('pointerdown', () => input.jump = true);
+        }
+
+        // --- 7. MAIN LOOP ---
+        function drawScene(now) {
+            const dt = Math.min((now - lastTime) * 0.001, 0.1);
+            lastTime = now;
+
+            // Physics & Movement Update
+            if (input.moveY !== 0 || input.moveX !== 0) {
+                const speed = 8.0;
+                const s = Math.sin(player.yaw), c = Math.cos(player.yaw);
+                
+                // Move relative to camera look direction
+                player.z += (input.moveY * c + input.moveX * s) * speed * dt;
+                player.x += (input.moveY * s - input.moveX * c) * speed * dt;
+            }
+
+            // Gravity & Jumping
+            player.vy -= 20 * dt; 
+            player.y += player.vy * dt;
+            if(player.y <= 1.5) { 
+                player.y = 1.5; 
+                player.vy = 0; 
+                if(input.jump) { player.vy = 8; input.jump = false; }
+            } else {
+                input.jump = false;
+            }
+
+            // Render Setup
+            gl.clearColor(0.5, 0.7, 1.0, 1.0); // Sky color
+            gl.clearDepth(1.0);
+            gl.enable(gl.DEPTH_TEST);
+            gl.depthFunc(gl.LEQUAL);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            const projMatrix = Math3D.createMatrix();
+            Math3D.perspective(projMatrix, 45 * Math.PI / 180, gl.canvas.width / gl.canvas.height, 0.1, 100.0);
+
+            const mvMatrix = Math3D.createMatrix();
+            Math3D.identity(mvMatrix);
+            
+            // First Person Camera view setup
+            Math3D.rotateX(mvMatrix, -player.pitch);
+            Math3D.rotateY(mvMatrix, -player.yaw);
+            Math3D.translate(mvMatrix, -player.x, -player.y, -player.z);
+
+            // Bind Buffers
+            const bindA = (buffer, loc, num) => {
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                gl.vertexAttribPointer(loc, num, gl.FLOAT, false, 0, 0);
+                gl.enableVertexAttribArray(loc);
             };
-            zoneRight.addEventListener('pointerup', resetRight);
-            zoneRight.addEventListener('pointercancel', resetRight);
-
-            document.getElementById('btn-jump').addEventListener('pointerdown', function() { Input.isJumping = true; });
-            document.getElementById('btn-jump').addEventListener('pointerup', function() { Input.isJumping = false; });
-            document.getElementById('btn-run').addEventListener('pointerdown', function() { Input.isRunning = true; });
-            document.getElementById('btn-run').addEventListener('pointerup', function() { Input.isRunning = false; });
-
-            const btnInteract = document.getElementById('interaction-prompt');
-            btnInteract.addEventListener('pointerdown', function() {
-                Input.interactTriggered = true;
-                btnInteract.style.background = "white";
-                btnInteract.style.color = "black";
-                setTimeout(function() {
-                    btnInteract.style.background = "rgba(0,0,0,0.7)";
-                    btnInteract.style.color = "white";
-                }, 200);
-            });
-        }
-
-        function updateJoystick(clientX, clientY) {
-            const maxDist = 50;
-            let dx = clientX - joystickCenter.x;
-            let dy = clientY - joystickCenter.y;
-            const distance = Math.sqrt(dx*dx + dy*dy);
-            if(distance > maxDist) { dx = (dx / distance) * maxDist; dy = (dy / distance) * maxDist; }
-            joyKnob.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';
-            Input.movement.x = dx / maxDist;
-            Input.movement.y = dy / maxDist; 
-        }
-
-        // ==========================================
-        // ENGINE
-        // ==========================================
-        let scene, camera, renderer, sunLight, hemiLight;
-
-        function initEngine(container) {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87ceeb);
-            scene.fog = new THREE.Fog(0x87ceeb, 20, 80);
-
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-
-            renderer = new THREE.WebGLRenderer({ antialias: false });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFShadowMap;
-            container.appendChild(renderer.domElement);
-
-            hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
-            scene.add(hemiLight);
-
-            sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
-            sunLight.castShadow = true;
-            sunLight.shadow.mapSize.width = 1024;
-            sunLight.shadow.mapSize.height = 1024;
-            sunLight.shadow.camera.near = 0.5;
-            sunLight.shadow.camera.far = 100;
-            const d = 40;
-            sunLight.shadow.camera.left = -d;
-            sunLight.shadow.camera.right = d;
-            sunLight.shadow.camera.top = d;
-            sunLight.shadow.camera.bottom = -d;
-            scene.add(sunLight);
-
-            window.addEventListener('resize', function() {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
-        }
-
-        function updateDayNight(time) {
-            const angle = ((time - 6) / 12) * Math.PI; 
-            sunLight.position.x = Math.cos(angle) * 50;
-            sunLight.position.y = Math.sin(angle) * 50;
-            sunLight.position.z = 20;
-
-            if(sunLight.position.y < 0) {
-                sunLight.intensity = 0; 
-                scene.background.setHex(0x0a0a2a);
-                scene.fog.color.setHex(0x0a0a2a);
-                hemiLight.intensity = 0.1;
-            } else {
-                sunLight.intensity = 1.2; 
-                if(sunLight.position.y < 15) {
-                    scene.background.setHex(0xfd5e53);
-                    scene.fog.color.setHex(0xfd5e53);
-                } else {
-                    scene.background.setHex(0x87ceeb);
-                    scene.fog.color.setHex(0x87ceeb);
-                }
-                hemiLight.intensity = 0.6;
-            }
-        }
-
-        // ==========================================
-        // WORLD
-        // ==========================================
-        let colliders = [];
-        let interactables = [];
-
-        function initWorld(scene) {
-            const groundGeo = new THREE.PlaneGeometry(200, 200);
-            const groundMat = new THREE.MeshLambertMaterial({ color: 0x2d6a4f });
-            const ground = new THREE.Mesh(groundGeo, groundMat);
-            ground.rotation.x = -Math.PI / 2;
-            ground.receiveShadow = true;
-            scene.add(ground);
-
-            createHouse(scene, 0, 0, 10, 0x8b4513, 0xff0000);
-            createHouse(scene, 15, 0, 15, 0xd2b48c, 0x0000ff);
-            createHouse(scene, -15, 0, 10, 0x808080, 0x00ff00);
-
-            for(let i=0; i<40; i++) {
-                let x = (Math.random() - 0.5) * 150;
-                let z = (Math.random() - 0.5) * 150;
-                if(Math.abs(x) < 25 && Math.abs(z) < 25) continue;
-                createTree(scene, x, z);
-            }
-        }
-
-        function createHouse(scene, x, y, z, wallColor, roofColor) {
-            const houseGrp = new THREE.Group();
-            houseGrp.position.set(x, y, z);
-
-            const wallGeo = new THREE.BoxGeometry(6, 4, 6);
-            const wallMat = new THREE.MeshLambertMaterial({ color: wallColor });
-            const walls = new THREE.Mesh(wallGeo, wallMat);
-            walls.position.y = 2;
-            walls.castShadow = true;
-            walls.receiveShadow = true;
-            houseGrp.add(walls);
-
-            const roofGeo = new THREE.ConeGeometry(5, 3, 4);
-            const roofMat = new THREE.MeshLambertMaterial({ color: roofColor });
-            const roof = new THREE.Mesh(roofGeo, roofMat);
-            roof.position.y = 5.5;
-            roof.rotation.y = Math.PI / 4;
-            roof.castShadow = true;
-            houseGrp.add(roof);
             
-            const doorGeo = new THREE.BoxGeometry(1.5, 2.5, 0.2);
-            const doorMat = new THREE.MeshLambertMaterial({ color: 0x4a2311 });
-            const door = new THREE.Mesh(doorGeo, doorMat);
-            door.position.set(0, 1.25, 3.1);
-            door.userData = { interactable: true, action: 'door', open: false, name: "Village House" };
-            houseGrp.add(door);
-            interactables.push(door);
+            bindA(buffers.position, programInfo.attribLocations.vertexPosition, 3);
+            bindA(buffers.normal, programInfo.attribLocations.vertexNormal, 3);
+            bindA(buffers.color, programInfo.attribLocations.vertexColor, 4);
 
-            scene.add(houseGrp);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
+            gl.useProgram(programInfo.program);
 
-            const box = new THREE.Box3();
-            box.setFromCenterAndSize(new THREE.Vector3(x, 2, z), new THREE.Vector3(6, 4, 6));
-            colliders.push(box);
+            gl.uniformMatrix4fv(programInfo.uniformLocations.projectionMatrix, false, projMatrix);
+            gl.uniformMatrix4fv(programInfo.uniformLocations.modelViewMatrix, false, mvMatrix);
+
+            gl.drawElements(gl.TRIANGLES, worldIndices.length, gl.UNSIGNED_SHORT, 0);
+
+            requestAnimationFrame(drawScene);
         }
 
-        function createTree(scene, x, z) {
-            const treeGrp = new THREE.Group();
-            treeGrp.position.set(x, 0, z);
-
-            const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 3);
-            const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5c4033 });
-            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-            trunk.position.y = 1.5;
-            trunk.castShadow = true;
-            
-            const leavesGeo = new THREE.ConeGeometry(2, 4, 5);
-            const leavesMat = new THREE.MeshLambertMaterial({ color: 0x228b22 });
-            const leaves = new THREE.Mesh(leavesGeo, leavesMat);
-            leaves.position.y = 4;
-            leaves.castShadow = true;
-
-            treeGrp.add(trunk);
-            treeGrp.add(leaves);
-            scene.add(treeGrp);
-
-            const box = new THREE.Box3();
-            box.setFromCenterAndSize(new THREE.Vector3(x, 1.5, z), new THREE.Vector3(1, 3, 1));
-            colliders.push(box);
-        }
-
-        // ==========================================
-        // PLAYER 
-        // ==========================================
-        let playerGroup;
-        let velocity = new THREE.Vector3();
-        let isGrounded = true;
-        let cameraYaw = 0;
-        let cameraPitch = 0;
-
-        const speedWalk = 5, speedRun = 10, jumpForce = 12, gravity = -30, playerRadius = 0.5, playerHeight = 2.0;
-
-        function initPlayer(scene, camera) {
-            playerGroup = new THREE.Group();
-            
-            const bodyGeo = new THREE.CylinderGeometry(0.3, 0.4, 1.2, 8);
-            const bodyMat = new THREE.MeshLambertMaterial({ color: 0x3498db });
-            const body = new THREE.Mesh(bodyGeo, bodyMat);
-            body.position.y = 0.6;
-            body.castShadow = true;
-            
-            const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-            const headMat = new THREE.MeshLambertMaterial({ color: 0xffccaa });
-            const head = new THREE.Mesh(headGeo, headMat);
-            head.position.y = 1.45;
-            head.castShadow = true;
-
-            playerGroup.add(body);
-            playerGroup.add(head);
-            scene.add(playerGroup);
-
-            const savedPos = Storage.load('playerPos', { x: 0, y: 5, z: 0 });
-            playerGroup.position.set(savedPos.x, savedPos.y, savedPos.z);
-        }
-
-        function updatePlayer(dt, camera, colliders) {
-            if(!playerGroup) return;
-
-            cameraYaw -= Input.cameraDelta.x;
-            cameraPitch -= Input.cameraDelta.y;
-            cameraPitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, cameraPitch));
-            Input.cameraDelta = { x: 0, y: 0 };
-
-            const speed = Input.isRunning ? speedRun : speedWalk;
-            const moveDir = new THREE.Vector3(Input.movement.x, 0, Input.movement.y);
-            
-            if (moveDir.length() > 0.1) {
-                moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraYaw);
-                playerGroup.rotation.y = Math.atan2(moveDir.x, moveDir.z);
-                velocity.x = moveDir.x * speed;
-                velocity.z = moveDir.z * speed;
-            } else {
-                velocity.x *= 0.8; 
-                velocity.z *= 0.8;
+        // Start 
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                initWebGL();
+                initControls();
+                requestAnimationFrame(drawScene);
+            }, 100); // Tiny delay to ensure browser gives us canvas width
+        });
+        
+        window.addEventListener('resize', () => {
+            if(gl) {
+                gl.canvas.width = window.innerWidth;
+                gl.canvas.height = window.innerHeight;
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
             }
-
-            if (Input.isJumping && isGrounded) {
-                velocity.y = jumpForce;
-                isGrounded = false;
-                Input.isJumping = false;
-            }
-            velocity.y += gravity * dt;
-
-            const nextPos = playerGroup.position.clone();
-            nextPos.x += velocity.x * dt;
-            nextPos.z += velocity.z * dt;
-            nextPos.y += velocity.y * dt;
-
-            const playerAABB = new THREE.Box3();
-            playerAABB.setFromCenterAndSize(
-                new THREE.Vector3(nextPos.x, nextPos.y + playerHeight/2, nextPos.z),
-                new THREE.Vector3(playerRadius*2, playerHeight, playerRadius*2)
-            );
-
-            let hitWall = false;
-            for(let i=0; i<colliders.length; i++) {
-                if(playerAABB.intersectsBox(colliders[i])) { hitWall = true; break; }
-            }
-
-            if(!hitWall) {
-                playerGroup.position.x = nextPos.x;
-                playerGroup.position.z = nextPos.z;
-            } else {
-                velocity.x = 0; velocity.z = 0;
-            }
-
-            if (playerGroup.position.y < 0) {
-                playerGroup.position.y = 0;
-                velocity.y = 0;
-                isGrounded = true;
-            } else {
-                playerGroup.position.y = nextPos.y;
-            }
-
-            const camOffset = new THREE.Vector3(
-                Math.sin(cameraYaw) * Math.cos(cameraPitch) * 6,
-                Math.sin(cameraPitch) * 6 + 2,
-                Math.cos(cameraYaw) * Math.cos(cameraPitch) * 6
-            );
-            camera.position.copy(playerGroup.position).add(camOffset);
-            camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1.5, playerGroup.position.z);
-        }
-
-        // ==========================================
-        // MAIN LOOP
-        // ==========================================
-        let lastTime = performance.now();
-        let saveTimer = 0;
-        let currentInteractable = null;
-
-        const uiLayer = document.getElementById('ui-layer');
-        const loadingScreen = document.getElementById('loading-screen');
-        const interactPrompt = document.getElementById('interaction-prompt');
-
-        function startGame() {
-            document.getElementById('loading-text').innerText = "Generating World...";
-            
-            initEngine(document.getElementById('game-container'));
-            initWorld(scene);
-            initPlayer(scene, camera);
-            initControls();
-            
-            // UI Setup
-            document.getElementById('btn-settings').addEventListener('click', function() {
-                document.getElementById('settings-menu').style.display = 'flex';
-                uiLayer.style.display = 'none';
-            });
-            document.getElementById('btn-close-settings').addEventListener('click', function() {
-                document.getElementById('settings-menu').style.display = 'none';
-                uiLayer.style.display = 'block';
-            });
-            document.getElementById('btn-reset-save').addEventListener('click', function() {
-                Storage.clear();
-                location.reload();
-            });
-            
-            const time = Storage.load('timeOfDay', 12);
-            document.getElementById('setting-time').value = time;
-            updateDayNight(time);
-            
-            Input.sensitivity = parseFloat(Storage.load('sensitivity', 1.0));
-            document.getElementById('setting-sensitivity').value = Input.sensitivity;
-
-            loadingScreen.style.display = 'none';
-            uiLayer.style.display = 'block';
-            
-            renderer.setAnimationLoop(animate);
-        }
-
-        function checkInteractions() {
-            if(!playerGroup) return;
-            let found = null;
-            const pPos = playerGroup.position;
-            
-            for(let i=0; i<interactables.length; i++) {
-                let obj = interactables[i];
-                let worldPos = new THREE.Vector3();
-                obj.getWorldPosition(worldPos);
-                if(pPos.distanceTo(worldPos) < 4) { found = obj; break; }
-            }
-
-            if(found !== currentInteractable) {
-                currentInteractable = found;
-                if(currentInteractable) {
-                    interactPrompt.style.display = 'block';
-                    interactPrompt.innerText = "Tap: " + currentInteractable.userData.name;
-                } else {
-                    interactPrompt.style.display = 'none';
-                }
-            }
-
-            if(Input.interactTriggered && currentInteractable) {
-                Input.interactTriggered = false; 
-                if(currentInteractable.userData.action === 'door') {
-                    currentInteractable.userData.open = !currentInteractable.userData.open;
-                    currentInteractable.rotation.y = currentInteractable.userData.open ? Math.PI / 2 : 0;
-                    currentInteractable.position.x = currentInteractable.userData.open ? -0.7 : 0;
-                }
-            } else {
-                Input.interactTriggered = false; 
-            }
-        }
-
-        function animate() {
-            const time = performance.now();
-            const dt = Math.min((time - lastTime) / 1000, 0.1); 
-            lastTime = time;
-
-            updatePlayer(dt, camera, colliders);
-            checkInteractions();
-
-            renderer.render(scene, camera);
-
-            saveTimer += dt;
-            if(saveTimer > 2.0 && playerGroup) {
-                Storage.save('playerPos', { x: playerGroup.position.x, y: playerGroup.position.y, z: playerGroup.position.z });
-                saveTimer = 0;
-            }
-        }
-
-        // Start exactly 1 second after script loads to ensure Three.js is ready
-        setTimeout(startGame, 1000);
+        });
     </script>
 </body>
 </html>
