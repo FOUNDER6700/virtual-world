@@ -4,47 +4,70 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Virtual World Prototype</title>
-    <link rel="stylesheet" href="style.css">
+    <style>
+        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; touch-action: none; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        #loading-screen, #settings-menu {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #111; color: white; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 100; pointer-events: auto;
+        }
+        .spinner { width: 40px; height: 40px; border: 4px solid #333; border-top: 4px solid #fff; border-radius: 50%; animation: spin 1s linear infinite; margin: 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #hud-top { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; pointer-events: auto; }
+        #logo { font-weight: bold; font-size: 1.2rem; color: white; text-shadow: 1px 1px 2px black; }
+        #btn-settings { background: rgba(0,0,0,0.5); color: white; border: 1px solid white; padding: 5px 15px; border-radius: 5px; }
+        #touch-zone-left { position: absolute; bottom: 0; left: 0; width: 50%; height: 100%; pointer-events: auto; }
+        #touch-zone-right { position: absolute; bottom: 0; right: 0; width: 50%; height: 100%; pointer-events: auto; }
+        #joystick-base {
+            position: absolute; width: 100px; height: 100px; background: rgba(255,255,255,0.2);
+            border-radius: 50%; display: none; transform: translate(-50%, -50%); pointer-events: none;
+        }
+        #joystick-knob {
+            position: absolute; top: 25px; left: 25px; width: 50px; height: 50px;
+            background: rgba(255,255,255,0.6); border-radius: 50%;
+        }
+        #action-buttons { position: absolute; bottom: 30px; right: 30px; display: flex; gap: 15px; pointer-events: auto; }
+        #action-buttons button {
+            width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,0.3);
+            color: white; border: 2px solid rgba(255,255,255,0.6); font-weight: bold; font-size: 0.8rem;
+        }
+        #action-buttons button:active { background: rgba(255,255,255,0.6); }
+        #interaction-prompt {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 20px;
+            border: 1px solid white; display: none; pointer-events: auto; font-size: 1.2rem;
+        }
+        .setting-row { margin: 15px 0; width: 80%; max-width: 300px; display: flex; justify-content: space-between; }
+        #settings-menu button { padding: 10px 20px; margin-top: 20px; font-size: 1.1rem; }
+    </style>
 </head>
 <body>
-    <!-- Loading Screen -->
     <div id="loading-screen">
         <h1>VIRTUAL WORLD</h1>
         <div class="spinner"></div>
-        <p id="loading-text">Loading environment...</p>
+        <p id="loading-text">Loading engine scripts...</p>
     </div>
 
-    <!-- 3D Canvas Container -->
     <div id="game-container"></div>
 
-    <!-- UI Layer -->
     <div id="ui-layer" style="display: none;">
-        <!-- Top HUD -->
         <div id="hud-top">
             <div id="logo">WORLD ALPHA</div>
             <button id="btn-settings">⚙️ Menu</button>
         </div>
-        
-        <!-- Interaction Prompt -->
         <div id="interaction-prompt">Tap to interact</div>
-
-        <!-- Touch Controls -->
-        <!-- Left half of screen for movement -->
         <div id="touch-zone-left"></div>
-        <!-- Right half of screen for camera look -->
         <div id="touch-zone-right"></div>
-        
-        <!-- Virtual Joystick UI (Dynamic) -->
         <div id="joystick-base"><div id="joystick-knob"></div></div>
-
-        <!-- Action Buttons -->
         <div id="action-buttons">
             <button id="btn-run">RUN</button>
             <button id="btn-jump">JUMP</button>
         </div>
     </div>
 
-    <!-- Settings Menu -->
     <div id="settings-menu" style="display: none;">
         <h2>Settings</h2>
         <div class="setting-row">
@@ -66,7 +89,345 @@
         <button id="btn-reset-save" style="margin-top:20px; background:red;">Reset Save</button>
     </div>
 
-    <script type="module" src="js/main.js"></script>
-</body>
-  </html>
-              
+    <script type="module">
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+        // ==========================================
+        // 1. STORAGE SYSTEM
+        // ==========================================
+        const Storage = {
+            save(key, data) { try { localStorage.setItem('vw_' + key, JSON.stringify(data)); } catch (e) {} },
+            load(key, defaultData) {
+                try { const data = localStorage.getItem('vw_' + key); return data ? JSON.parse(data) : defaultData; } 
+                catch (e) { return defaultData; }
+            },
+            clear() { Object.keys(localStorage).forEach(key => { if(key.startsWith('vw_')) localStorage.removeItem(key); }); }
+        };
+
+        // ==========================================
+        // 2. INPUT & CONTROLS
+        // ==========================================
+        const Input = {
+            movement: { x: 0, y: 0 }, cameraDelta: { x: 0, y: 0 },
+            isJumping: false, isRunning: false, interactTriggered: false, sensitivity: 1.0
+        };
+
+        let joyBase, joyKnob, joystickCenter = { x: 0, y: 0 };
+        let activeLeftTouch = null, activeRightTouch = null, lastRightPos = { x: 0, y: 0 };
+
+        function initControls() {
+            joyBase = document.getElementById('joystick-base');
+            joyKnob = document.getElementById('joystick-knob');
+            const zoneLeft = document.getElementById('touch-zone-left');
+            const zoneRight = document.getElementById('touch-zone-right');
+
+            zoneLeft.addEventListener('pointerdown', (e) => {
+                if(activeLeftTouch !== null) return;
+                activeLeftTouch = e.pointerId;
+                joystickCenter = { x: e.clientX, y: e.clientY };
+                joyBase.style.display = 'block';
+                joyBase.style.left = joystickCenter.x + 'px';
+                joyBase.style.top = joystickCenter.y + 'px';
+                updateJoystick(e.clientX, e.clientY);
+            });
+
+            zoneLeft.addEventListener('pointermove', (e) => {
+                if(e.pointerId === activeLeftTouch) updateJoystick(e.clientX, e.clientY);
+            });
+
+            const resetLeft = (e) => {
+                if(e.pointerId === activeLeftTouch) {
+                    activeLeftTouch = null;
+                    joyBase.style.display = 'none';
+                    Input.movement = { x: 0, y: 0 };
+                    joyKnob.style.transform = `translate(0px, 0px)`;
+                }
+            };
+            zoneLeft.addEventListener('pointerup', resetLeft);
+            zoneLeft.addEventListener('pointercancel', resetLeft);
+
+            zoneRight.addEventListener('pointerdown', (e) => {
+                if(activeRightTouch !== null) return;
+                activeRightTouch = e.pointerId;
+                lastRightPos = { x: e.clientX, y: e.clientY };
+            });
+
+            zoneRight.addEventListener('pointermove', (e) => {
+                if(e.pointerId === activeRightTouch) {
+                    Input.cameraDelta.x = (e.clientX - lastRightPos.x) * 0.005 * Input.sensitivity;
+                    Input.cameraDelta.y = (e.clientY - lastRightPos.y) * 0.005 * Input.sensitivity;
+                    lastRightPos = { x: e.clientX, y: e.clientY };
+                }
+            });
+
+            const resetRight = (e) => {
+                if(e.pointerId === activeRightTouch) {
+                    activeRightTouch = null;
+                    Input.cameraDelta = { x: 0, y: 0 };
+                }
+            };
+            zoneRight.addEventListener('pointerup', resetRight);
+            zoneRight.addEventListener('pointercancel', resetRight);
+
+            document.getElementById('btn-jump').addEventListener('pointerdown', () => Input.isJumping = true);
+            document.getElementById('btn-jump').addEventListener('pointerup', () => Input.isJumping = false);
+            
+            document.getElementById('btn-run').addEventListener('pointerdown', () => Input.isRunning = true);
+            document.getElementById('btn-run').addEventListener('pointerup', () => Input.isRunning = false);
+
+            const btnInteract = document.getElementById('interaction-prompt');
+            btnInteract.addEventListener('pointerdown', () => {
+                Input.interactTriggered = true;
+                btnInteract.style.background = "white";
+                btnInteract.style.color = "black";
+                setTimeout(() => {
+                    btnInteract.style.background = "rgba(0,0,0,0.7)";
+                    btnInteract.style.color = "white";
+                }, 200);
+            });
+        }
+
+        function updateJoystick(clientX, clientY) {
+            const maxDist = 50;
+            let dx = clientX - joystickCenter.x;
+            let dy = clientY - joystickCenter.y;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            if(distance > maxDist) { dx = (dx / distance) * maxDist; dy = (dy / distance) * maxDist; }
+            joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+            Input.movement.x = dx / maxDist;
+            Input.movement.y = dy / maxDist; 
+        }
+
+        // ==========================================
+        // 3. GRAPHICS ENGINE
+        // ==========================================
+        let scene, camera, renderer, sunLight, hemiLight;
+
+        function initEngine(container) {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb);
+            scene.fog = new THREE.Fog(0x87ceeb, 20, 80);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+
+            renderer = new THREE.WebGLRenderer({ antialias: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFShadowMap;
+            container.appendChild(renderer.domElement);
+
+            hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+            scene.add(hemiLight);
+
+            sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 1024;
+            sunLight.shadow.mapSize.height = 1024;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 100;
+            const d = 40;
+            sunLight.shadow.camera.left = -d;
+            sunLight.shadow.camera.right = d;
+            sunLight.shadow.camera.top = d;
+            sunLight.shadow.camera.bottom = -d;
+            scene.add(sunLight);
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function updateDayNight(time) {
+            const angle = ((time - 6) / 12) * Math.PI; 
+            sunLight.position.x = Math.cos(angle) * 50;
+            sunLight.position.y = Math.sin(angle) * 50;
+            sunLight.position.z = 20;
+
+            if(sunLight.position.y < 0) {
+                sunLight.intensity = 0; 
+                scene.background.setHex(0x0a0a2a);
+                scene.fog.color.setHex(0x0a0a2a);
+                hemiLight.intensity = 0.1;
+            } else {
+                sunLight.intensity = 1.2; 
+                if(sunLight.position.y < 15) {
+                    scene.background.setHex(0xfd5e53);
+                    scene.fog.color.setHex(0xfd5e53);
+                } else {
+                    scene.background.setHex(0x87ceeb);
+                    scene.fog.color.setHex(0x87ceeb);
+                }
+                hemiLight.intensity = 0.6;
+            }
+        }
+
+        // ==========================================
+        // 4. WORLD GENERATION
+        // ==========================================
+        let colliders = [];
+        let interactables = [];
+
+        function initWorld(scene) {
+            const groundGeo = new THREE.PlaneGeometry(200, 200);
+            const groundMat = new THREE.MeshLambertMaterial({ color: 0x2d6a4f });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            const waterGeo = new THREE.PlaneGeometry(30, 30);
+            const waterMat = new THREE.MeshLambertMaterial({ color: 0x0077b6, transparent: true, opacity: 0.8 });
+            const water = new THREE.Mesh(waterGeo, waterMat);
+            water.rotation.x = -Math.PI / 2;
+            water.position.set(40, 0.1, -30);
+            scene.add(water);
+
+            createHouse(scene, 0, 0, 10, 0x8b4513, 0xff0000);
+            createHouse(scene, 15, 0, 15, 0xd2b48c, 0x0000ff);
+            createHouse(scene, -15, 0, 10, 0x808080, 0x00ff00);
+
+            for(let i=0; i<40; i++) {
+                let x = (Math.random() - 0.5) * 150;
+                let z = (Math.random() - 0.5) * 150;
+                if(Math.abs(x) < 25 && Math.abs(z) < 25) continue;
+                if(x > 25 && z < -15) continue;
+                createTree(scene, x, z);
+            }
+            createMysteriousArea(scene);
+        }
+
+        function createHouse(scene, x, y, z, wallColor, roofColor) {
+            const houseGrp = new THREE.Group();
+            houseGrp.position.set(x, y, z);
+
+            const wallGeo = new THREE.BoxGeometry(6, 4, 6);
+            const wallMat = new THREE.MeshLambertMaterial({ color: wallColor });
+            const walls = new THREE.Mesh(wallGeo, wallMat);
+            walls.position.y = 2;
+            walls.castShadow = true;
+            walls.receiveShadow = true;
+            houseGrp.add(walls);
+
+            const roofGeo = new THREE.ConeGeometry(5, 3, 4);
+            const roofMat = new THREE.MeshLambertMaterial({ color: roofColor });
+            const roof = new THREE.Mesh(roofGeo, roofMat);
+            roof.position.y = 5.5;
+            roof.rotation.y = Math.PI / 4;
+            roof.castShadow = true;
+            houseGrp.add(roof);
+            
+            const doorGeo = new THREE.BoxGeometry(1.5, 2.5, 0.2);
+            const doorMat = new THREE.MeshLambertMaterial({ color: 0x4a2311 });
+            const door = new THREE.Mesh(doorGeo, doorMat);
+            door.position.set(0, 1.25, 3.1);
+            door.userData = { interactable: true, action: 'door', open: false, name: "Village House" };
+            houseGrp.add(door);
+            interactables.push(door);
+
+            scene.add(houseGrp);
+
+            const box = new THREE.Box3();
+            box.setFromCenterAndSize(new THREE.Vector3(x, 2, z), new THREE.Vector3(6, 4, 6));
+            colliders.push(box);
+        }
+
+        function createTree(scene, x, z) {
+            const treeGrp = new THREE.Group();
+            treeGrp.position.set(x, 0, z);
+
+            const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 3);
+            const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5c4033 });
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.y = 1.5;
+            trunk.castShadow = true;
+            
+            const leavesGeo = new THREE.ConeGeometry(2, 4, 5);
+            const leavesMat = new THREE.MeshLambertMaterial({ color: 0x228b22 });
+            const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+            leaves.position.y = 4;
+            leaves.castShadow = true;
+
+            treeGrp.add(trunk);
+            treeGrp.add(leaves);
+            scene.add(treeGrp);
+
+            const box = new THREE.Box3();
+            box.setFromCenterAndSize(new THREE.Vector3(x, 1.5, z), new THREE.Vector3(1, 3, 1));
+            colliders.push(box);
+        }
+
+        function createMysteriousArea(scene) {
+            const mystGrp = new THREE.Group();
+            mystGrp.position.set(-40, 0, -40);
+
+            for(let i=0; i<8; i++) {
+                const angle = (i / 8) * Math.PI * 2;
+                const geo = new THREE.BoxGeometry(2, 8, 2);
+                const mat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+                const pillar = new THREE.Mesh(geo, mat);
+                pillar.position.set(Math.cos(angle)*10, 4, Math.sin(angle)*10);
+                pillar.castShadow = true;
+                mystGrp.add(pillar);
+                
+                const box = new THREE.Box3();
+                box.setFromCenterAndSize(new THREE.Vector3(mystGrp.position.x + pillar.position.x, 4, mystGrp.position.z + pillar.position.z), new THREE.Vector3(2, 8, 2));
+                colliders.push(box);
+            }
+
+            const glowGeo = new THREE.BoxGeometry(3,3,3);
+            const glowMat = new THREE.MeshBasicMaterial({ color: 0x8a2be2, wireframe: true });
+            const glow = new THREE.Mesh(glowGeo, glowMat);
+            glow.position.y = 2;
+            glow.userData = { interactable: true, action: 'monolith', name: "Strange Artifact" };
+            interactables.push(glow);
+            mystGrp.add(glow);
+            scene.add(mystGrp);
+        }
+
+        // ==========================================
+        // 5. PLAYER PHYSICS
+        // ==========================================
+        let playerGroup;
+        let velocity = new THREE.Vector3();
+        let isGrounded = true;
+        let cameraYaw = 0;
+        let cameraPitch = 0;
+
+        const speedWalk = 5, speedRun = 10, jumpForce = 12, gravity = -30, playerRadius = 0.5, playerHeight = 2.0;
+
+        function initPlayer(scene, camera) {
+            playerGroup = new THREE.Group();
+            
+            const bodyGeo = new THREE.CylinderGeometry(0.3, 0.4, 1.2, 8);
+            const bodyMat = new THREE.MeshLambertMaterial({ color: 0x3498db });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = 0.6;
+            body.castShadow = true;
+            
+            const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+            const headMat = new THREE.MeshLambertMaterial({ color: 0xffccaa });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.y = 1.45;
+            head.castShadow = true;
+
+            playerGroup.add(body);
+            playerGroup.add(head);
+            scene.add(playerGroup);
+
+            const savedPos = Storage.load('playerPos', { x: 0, y: 5, z: 0 });
+            playerGroup.position.set(savedPos.x, savedPos.y, savedPos.z);
+        }
+
+        function updatePlayer(dt, camera, colliders) {
+            if(!playerGroup) return;
+
+            cameraYaw -= Input.cameraDelta.x;
+            cameraPitch -= Input.cameraDelta.y;
+            cameraPitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, cameraPitch));
+            Input.cameraDelta = { x: 0, y: 0 };
+
+            const speed = Input.isRunning ? speedRun : speedWalk;
+            const moveDir = new THREE.Vector3(Input.movement.x,
